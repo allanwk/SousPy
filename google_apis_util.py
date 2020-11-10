@@ -1,3 +1,5 @@
+from googleapiclient.http import MediaFileUpload
+
 def read_paragraph_element(element):
     """Returns the text in the given ParagraphElement.
 
@@ -36,3 +38,12 @@ def read_structural_elements(elements):
             toc = value.get('tableOfContents')
             text += read_strucutural_elements(toc.get('content'))
     return text
+
+def create_drive_file(name, path, parent_id, drive_service):
+    metadata = {'name': name, 'parents': [parent_id]}
+    media = MediaFileUpload(path)
+    file = drive_service.files().create(
+        body=metadata,
+        media_body=media,
+        fields='id').execute()
+    return file

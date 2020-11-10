@@ -8,7 +8,7 @@ from google_auth_oauthlib.flow import InstalledAppFlow
 from google.auth.transport.requests import Request
 import pandas as pd
 from dotenv import load_dotenv
-from docs_util import read_structural_elements
+from google_apis_util import read_structural_elements, create_drive_file
 from math import ceil
 
 #Carregando variáveis de ambiente
@@ -17,6 +17,7 @@ ORDERS_SPREADSHEET_ID = os.environ.get("ORDERS_SPREADSHEET_ID")
 STOCK_SPREADSHEET_ID = os.environ.get("STOCK_SPREADSHEET_ID")
 RECIPES_DIR_ID = os.environ.get("RECIPES_DIR_ID")
 TEMPLATE_DOC_ID = os.environ.get("TEMPLATE_DOC_ID")
+MAIN_FOLDER_ID = os.environ.get("MAIN_FOLDER_ID")
 
 SCOPES = ['https://www.googleapis.com/auth/drive',
           'https://www.googleapis.com/auth/spreadsheets',
@@ -151,5 +152,29 @@ def main():
             if buy_qty != 0:
                 shopping_list.write("{} x{}\n".format(index, buy_qty))
 
+    #Chamando a Drive API para atualizar as informações
+    needed_files = {
+        'shopping_list.txt': '', 
+        'bills.txt': ''
+        }
+
+    for path in needed_files.keys():
+        response = drive_service.files().list(q="name='{}' and '{}' in parents and trashed = False".format(path, MAIN_FOLDER_ID),
+                                              spaces='drive',
+                                              fields='files(id)').execute()
+        if len(response['files']) == 0:
+            print("Criando o arquivo {} no drive.".format(path))
+            response = create_drive_file(path, "./" + path, MAIN_FOLDER_ID, drive_service)
+            needed_files[path] = response['id']
+        else:
+            needed_files[path] = response['files'][0]['id']
+
+        media = MediaFileUpload("./" + path)
+        file = drive_service.files().update(
+                                        media_body=media,
+                                        fileId=needed_files[path],
+                                        fields='id').execute()
+
+    print("Informações salvas no drive com sucesso.")
 if __name__ == "__main__":
     main()
