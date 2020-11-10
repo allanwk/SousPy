@@ -3,18 +3,20 @@ import os.path
 import os
 import io
 from googleapiclient.discovery import build
-from googleapiclient.http import MediaFileUpload, MediaIoBaseDownload
+from googleapiclient.http import MediaFileUpload
 from google_auth_oauthlib.flow import InstalledAppFlow
 from google.auth.transport.requests import Request
 import pandas as pd
 from dotenv import load_dotenv
 from docs_util import read_structural_elements
+import codecs
 
 #Carregando variáveis de ambiente
 load_dotenv()
 ORDERS_SPREADSHEET_ID = os.environ.get("ORDERS_SPREADSHEET_ID")
 STOCK_SPREADSHEET_ID = os.environ.get("STOCK_SPREADSHEET_ID")
 RECIPES_DIR_ID = os.environ.get("RECIPES_DIR_ID")
+TEMPLATE_DOC_ID = os.environ.get("TEMPLATE_DOC_ID")
 
 SCOPES = ['https://www.googleapis.com/auth/drive',
           'https://www.googleapis.com/auth/spreadsheets',
@@ -49,6 +51,13 @@ def main():
     d = {col[0]: col[1:] for col in orders}    
     orders_df = pd.DataFrame(data=d)
 
+    #Obtendo informações de preço
+    sheet = sheets_service.spreadsheets()
+    prices_result = sheet.values().get(
+        spreadsheetId=ORDERS_SPREADSHEET_ID,
+        range='Menu').execute()
+    prices = dict(prices_result.get('values', [])[1:])
+
     #Obtendo informações do estoque
     stock_result = sheet.values().get(
         spreadsheetId=STOCK_SPREADSHEET_ID,
@@ -78,15 +87,57 @@ def main():
                 except Exception as e:
                     print("{}: line: <{}>".format(e, line))
         recipes[title] = recipe_dict
-    
-    #Calculando quantidade necessaria de cada ingrediente
+
+    #Obtendo template, contendo nome do produto e política de descontos
+    document = docs_service.documents().get(documentId=TEMPLATE_DOC_ID).execute()
+    content = document.get('body').get('content')
+    template = read_structural_elements(content)
+    template_lines = template.splitlines(True)
+    product_info = template_lines[0].split(',')
+    discount_treshold = int(product_info[2][product_info[2].index('>')+1:-1])
+    discount_mult = float(product_info[2][:product_info[2].index('>')])
+
+    #Analisando pedidos
+    bills = codecs.open("bills.txt", "w+", "utf-8")
     for index, row in orders_df.iterrows():
+        template = read_structural_elements(content)
+        template_lines = template.splitlines(True)
+        current_orders = []
+        total_price = 0
+        orders_qty = 0
         for col in orders_df.columns:
             if row[col] != "0" and col != "Cliente":
+                #Calculo da quantidade necessaria de cada ingrediente
                 for ingredient, qty in recipes[col].items():
-                    print(qty)
-                    print(row[col])
                     stock_df.at[ingredient, "Quantidade necessaria"] += float(qty) * float(row[col])
+
+                #Construindo mensagem de confirmacao de pedido
+                orders_qty += int(row[col])
+                total_price += float(row[col])*float(prices[col].replace(',','.'))
+                name = product_info[0]
+                if int(row[col]) > 1:
+                    name = product_info[1]
+                current_orders.append("{} {} de {}".format(int(row[col]), name, col))
+        
+        #Inserindo pedidos no template de mensagem
+        insertion_index = template_lines.index('Vamos conferir seu pedido:\n') + 1
+        template_lines[insertion_index:insertion_index] = current_orders
+
+        #Calculo de preço
+        if orders_qty > discount_treshold:
+            total_price *= discount_mult
+        total_price = format(total_price, '.2f')
+    
+        #Adicionando informações de cliente e preço na mensagem
+        for index, line in enumerate(template_lines):
+            if "{total}" in line:
+                template_lines[index] = line.format(total=total_price)
+            elif "{client}" in line:
+                template_lines[index] = line.format(client=row["Cliente"])
+        
+        bills.writelines(template_lines[1:])
+    
+    bills.close()
 
 if __name__ == "__main__":
     main()
