@@ -57,6 +57,8 @@ def main():
     stock = stock_result.get('values', [])
     d = {col[0]: col[1:] for col in stock}    
     stock_df = pd.DataFrame(data=d)
+    stock_df["Quantidade necessaria"] = [float(0)] * len(stock_df.index)
+    stock_df = stock_df.set_index("Ingrediente")
 
     #Buscando receitas no diretorio 
     recipes_response = drive_service.files().list(q="'{}' in parents and trashed = False".format(RECIPES_DIR_ID),
@@ -76,6 +78,15 @@ def main():
                 except Exception as e:
                     print("{}: line: <{}>".format(e, line))
         recipes[title] = recipe_dict
+    
+    #Calculando quantidade necessaria de cada ingrediente
+    for index, row in orders_df.iterrows():
+        for col in orders_df.columns:
+            if row[col] != "0" and col != "Cliente":
+                for ingredient, qty in recipes[col].items():
+                    print(qty)
+                    print(row[col])
+                    stock_df.at[ingredient, "Quantidade necessaria"] += float(qty) * float(row[col])
 
 if __name__ == "__main__":
     main()
