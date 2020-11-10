@@ -10,7 +10,8 @@ from dotenv import load_dotenv
 
 #Carregando variáveis de ambiente
 load_dotenv()
-SPREADSHEET_ID = os.environ.get("SPREADSHEET_ID")
+ORDERS_SPREADSHEET_ID = os.environ.get("ORDERS_SPREADSHEET_ID")
+STOCK_SPREADSHEET_ID = os.environ.get("STOCK_SPREADSHEET_ID")
 
 SCOPES = ['https://www.googleapis.com/auth/drive', 'https://www.googleapis.com/auth/spreadsheets']
 
@@ -32,15 +33,24 @@ def main():
     drive_service = build('drive', 'v3', credentials=creds)
     sheets_service = build('sheets', 'v4', credentials=creds)
 
-    #Chamar a Sheets API para pegar as informações de pedidos e estoque
+    #Chamar a Sheets API para pegar as informações de pedidos
     sheet = sheets_service.spreadsheets()
     orders_result = sheet.values().get(
-        spreadsheetId=SPREADSHEET_ID,
+        spreadsheetId=ORDERS_SPREADSHEET_ID,
         range='Pedidos',
         majorDimension='COLUMNS').execute()
     orders = orders_result.get('values', [])
     d = {col[0]: col[1:] for col in orders}    
     orders_df = pd.DataFrame(data=d)
+
+    #Obtendo informações do estoque
+    stock_result = sheet.values().get(
+        spreadsheetId=STOCK_SPREADSHEET_ID,
+        range='Estoque',
+        majorDimension='COLUMNS').execute()
+    stock = stock_result.get('values', [])
+    d = {col[0]: col[1:] for col in stock}    
+    stock_df = pd.DataFrame(data=d)
 
 if __name__ == "__main__":
     main()
