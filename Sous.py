@@ -1,19 +1,24 @@
 import pickle
 import os.path
 import os
+import io
 from googleapiclient.discovery import build
-from googleapiclient.http import MediaFileUpload
+from googleapiclient.http import MediaFileUpload, MediaIoBaseDownload
 from google_auth_oauthlib.flow import InstalledAppFlow
 from google.auth.transport.requests import Request
 import pandas as pd
 from dotenv import load_dotenv
+from docs_util import read_structural_elements
 
 #Carregando variáveis de ambiente
 load_dotenv()
 ORDERS_SPREADSHEET_ID = os.environ.get("ORDERS_SPREADSHEET_ID")
 STOCK_SPREADSHEET_ID = os.environ.get("STOCK_SPREADSHEET_ID")
+RECIPES_DIR_ID = os.environ.get("RECIPES_DIR_ID")
 
-SCOPES = ['https://www.googleapis.com/auth/drive', 'https://www.googleapis.com/auth/spreadsheets']
+SCOPES = ['https://www.googleapis.com/auth/drive',
+          'https://www.googleapis.com/auth/spreadsheets',
+          'https://www.googleapis.com/auth/documents.readonly']
 
 def main():
     creds = None
@@ -32,6 +37,7 @@ def main():
 
     drive_service = build('drive', 'v3', credentials=creds)
     sheets_service = build('sheets', 'v4', credentials=creds)
+    docs_service = build('docs', 'v1', credentials=creds)
 
     #Chamar a Sheets API para pegar as informações de pedidos
     sheet = sheets_service.spreadsheets()
@@ -51,6 +57,25 @@ def main():
     stock = stock_result.get('values', [])
     d = {col[0]: col[1:] for col in stock}    
     stock_df = pd.DataFrame(data=d)
+
+    #Buscando receitas no diretorio 
+    recipes_response = drive_service.files().list(q="'{}' in parents and trashed = False".format(RECIPES_DIR_ID),
+                                          spaces='drive',
+                                          fields='files(id, name)').execute()
+    recipes = {}
+    for recipe_file in recipes_response['files']:
+        document = docs_service.documents().get(documentId=recipe_file['id']).execute()
+        title = document.get('title')
+        content = document.get('body').get('content')
+        recipe_lines = read_structural_elements(content).splitlines()
+        recipe_dict = {}
+        for line in recipe_lines:
+            if line != "":
+                try:
+                    recipe_dict[line[:line.index(':')]] = float(line[line.index(':')+1:])
+                except Exception as e:
+                    print("{}: line: <{}>".format(e, line))
+        recipes[title] = recipe_dict
 
 if __name__ == "__main__":
     main()
