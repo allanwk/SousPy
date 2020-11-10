@@ -9,7 +9,7 @@ from google.auth.transport.requests import Request
 import pandas as pd
 from dotenv import load_dotenv
 from docs_util import read_structural_elements
-import codecs
+from math import ceil
 
 #Carregando variáveis de ambiente
 load_dotenv()
@@ -98,7 +98,7 @@ def main():
     discount_mult = float(product_info[2][:product_info[2].index('>')])
 
     #Analisando pedidos
-    bills = codecs.open("bills.txt", "w+", "utf-8")
+    bills = open("bills.txt", "w+", encoding="utf-8")
     for index, row in orders_df.iterrows():
         template = read_structural_elements(content)
         template_lines = template.splitlines(True)
@@ -138,6 +138,18 @@ def main():
         bills.writelines(template_lines[1:])
     
     bills.close()
+
+    with open("shopping_list.txt", "w+") as shopping_list:
+        for index, row in stock_df.iterrows():
+            """Quantidade por embalagem 0 = ingrediente medido em unidades"""
+            buy_qty = 0
+            if int(row["Quantidade por Embalagem"]) == 0:
+                if float(row["Quantidade necessaria"]) >= float(row["Gramas"]):
+                    buy_qty = ceil((float(row["Quantidade necessaria"]) - float(row["Gramas"])))
+            elif (float(row["Quantidade necessaria"]) >= float(row["Gramas"]) or float(row["Gramas"]) <= 11):
+                buy_qty = ceil((float(row["Quantidade necessaria"]) - float(row["Gramas"])) / float(row["Quantidade por Embalagem"]))
+            if buy_qty != 0:
+                shopping_list.write("{} x{}\n".format(index, buy_qty))
 
 if __name__ == "__main__":
     main()
